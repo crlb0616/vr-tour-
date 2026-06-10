@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>北建大图书馆 + 云冈石窟第十八窟 - VR全景导览</title>
+    
+    <!-- 引入A-Frame核心库 -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <!-- 引入辅助组件：让热点始终面向相机 -->
+    <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
+    
+    <!-- 高德地图安全密钥配置 -->
+    <script type="text/javascript">
+        window._AMapSecurityConfig = {
+            securityJsCode: "577f48a7ce95d3c4b2b61edcf5d3a300"
+        };
+    </script>
+    <!-- 高德地图 API 加载 -->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=c3d754b836869d372865d5d129bd05ab"></script>
+    
+    <style>
+        body { margin: 0; overflow: hidden; font-family: "Microsoft YaHei", sans-serif; }
+        
+        .ui-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        button {
+            pointer-events: auto;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 0 8px;
+            border-radius: 40px;
+            font-size: 16px;
+            font-weight: bold;
+            backdrop-filter: blur(5px);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        button:active { transform: scale(0.95); }
+        button.active { background: #8B4513; color: white; }
+        
+        .scene-name {
+            background: rgba(0,0,0,0.6);
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            display: inline-block;
+            margin-top: 10px;
+            backdrop-filter: blur(4px);
+        }
+        
+        @media (max-width: 768px) {
+            button { padding: 8px 16px; font-size: 14px; margin: 0 5px; }
+            .scene-name { font-size: 12px; }
+        }
+        
+        .info-tip {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.5);
+            color: #ffd966;
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            z-index: 100;
+            font-family: monospace;
+        }
+        
+        .title-bar {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.5);
+            color: #e6c87e;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 100;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="title-bar">🏛️ 北京建筑大学 · 云冈石窟第十八窟 | 1:1复刻大佛</div>
+    <div class="info-tip">🎧 点击下方按钮启用语音导览 | 🗺️ 右下角地图可点击</div>
+
+    <!-- VR场景 -->
+    <a-scene vr-mode-ui="enabled: true" device-orientation-permission-ui="enabled: true">
+        <a-videosphere id="videoSphere" src="" rotation="0 -90 0"></a-videosphere>
+        
+        <a-entity id="hotspot-info"
+                  geometry="primitive: circle; radius: 0.6"
+                  material="color: #8B4513; shader: flat; opacity: 0.85"
+                  position="2 1.2 -3.5"
+                  look-at="#camera">
+            <a-text value="📿 大佛细节" color="#ffd966" align="center" position="0 0 0.08" scale="0.7 0.7 0.7"></a-text>
+        </a-entity>
+        
+        <a-camera id="camera" position="0 1.6 0">
+            <a-cursor id="cursor" material="color: #e6c87e; shader: flat" 
+                      animation__click="property: scale; startEvents: click; from: 0.3 0.3 0.3; to: 1 1 1; dur: 150">
+                <a-ring radius-outer="0.04" radius-inner="0.02" color="#e6c87e"></a-ring>
+            </a-cursor>
+        </a-camera>
+        
+        <a-light type="ambient" color="#554433" intensity="0.4"></a-light>
+    </a-scene>
+
+    <!-- UI控制栏 -->
+    <div class="ui-panel">
+        <div>
+            <button id="btnLibrary">📚 北建大图书馆</button>
+            <button id="btnBuddha">🗿 云冈石窟第十八窟 · 大佛</button>
+            <button id="btnAutoTour" class="active">🚀 自动导览</button>
+        </div>
+        <div class="scene-name" id="sceneNameDisplay">当前场景：未加载</div>
+    </div>
+
+    <!-- 高德地图容器 -->
+    <div id="mapContainer" style="position: fixed; bottom: 20px; right: 20px; width: 260px; height: 260px; z-index: 200; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 2px solid rgba(255,255,255,0.3); background: #f5f5f5;"></div>
+
+    <script>
+        // ==================== ⚠️⚠️⚠️ 必改区域：视频地址和讲解词 ⚠️⚠️⚠️ ====================
+        const scenes = {
+            library: {
+                id: 'bucea_library',
+                name: '北京建筑大学图书馆',
+                // ⚠️ 必改1：换成你的图书馆全景视频的 GitHub raw 链接
+                videoUrl: 'http://tgebjs9sc.hn-bkt.clouddn.com/library1.mp4',
+                // ⚠️ 必改2：换成你的图书馆讲解词
+                description: '欢迎来到北京建筑大学图书馆。这里是知识的殿堂，建筑与艺术的交汇点，为学子们提供静谧的学习空间。'
+            },
+            buddha: {
+                id: 'yungang_cave18',
+                name: '云冈石窟第十八窟 · 1:1复刻大佛',
+                // ⚠️ 必改3：换成你的大佛全景视频的 GitHub raw 链接
+                videoUrl: 'http://tgebjs9sc.hn-bkt.clouddn.com/buddha.mp4',
+                // ⚠️ 必改4：换成你的大佛讲解词
+                description: '您现在看到的是云冈石窟第十八窟1:1复刻大佛雕像。立佛身高15.5米，位于北京建筑大学大兴校区学院楼F座后方，是国际首例超大型文物等比例复制工程，展现了北魏时期高超的造像艺术。'
+            }
+        };
+        
+        // ==================== 场景与地理坐标映射 ====================
+        const sceneCoordinates = {
+            library: { lng: 116.28142, lat: 39.74472, name: '北京建筑大学图书馆' },
+            buddha: { lng: 116.27953, lat: 39.74612, name: '云冈石窟第十八窟·1:1复刻大佛' }
+        };
+        // ==================== ⚠️⚠️⚠️ 必改区域结束 ⚠️⚠️⚠️ ====================
+
+        // 全局变量
+        let currentSceneId = 'library';
+        let isAutoTouring = false;
+        let autoTimer = null;
+        let currentUtterance = null;
+        let map = null;
+        let markers = [];
+        
+        // DOM 元素
+        const videoSphere = document.getElementById('videoSphere');
+        const sceneNameDisplay = document.getElementById('sceneNameDisplay');
+        const btnLibrary = document.getElementById('btnLibrary');
+        const btnBuddha = document.getElementById('btnBuddha');
+        const btnAutoTour = document.getElementById('btnAutoTour');
+        
+        // ==================== 语音播报 ====================
+        function speakText(text) {
+            if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+                window.speechSynthesis.cancel();
+            }
+            if (currentUtterance) currentUtterance = null;
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-CN';
+            utterance.rate = 0.9;
+            utterance.pitch = 1.0;
+            utterance.volume = 1;
+            
+            utterance.onstart = () => {
+                console.log('[语音] 开始:', text.substring(0, 30));
+                const tip = document.querySelector('.info-tip');
+                if (tip) tip.style.background = "rgba(100,60,20,0.8)";
+            };
+            utterance.onend = () => {
+                console.log('[语音] 结束');
+                const tip = document.querySelector('.info-tip');
+                if (tip) tip.style.background = "rgba(0,0,0,0.5)";
+            };
+            utterance.onerror = (e) => console.error('[语音错误]', e);
+            
+            currentUtterance = utterance;
+            window.speechSynthesis.speak(utterance);
+        }
+        
+        // ==================== 加载场景 ====================
+        function loadScene(sceneKey, skipSpeech = false) {
+            if (!scenes[sceneKey]) return;
+            const scene = scenes[sceneKey];
+            currentSceneId = sceneKey;
+            
+            videoSphere.setAttribute('src', scene.videoUrl);
+            sceneNameDisplay.innerText = `📍 ${scene.name}`;
+            
+            btnLibrary.classList.remove('active');
+            btnBuddha.classList.remove('active');
+            if (sceneKey === 'library') btnLibrary.classList.add('active');
+            if (sceneKey === 'buddha') btnBuddha.classList.add('active');
+            
+            if (!skipSpeech && scene.description) {
+                speakText(scene.description);
+            }
+            
+            // 联动地图：高亮当前场景对应的标记
+            if (map) highlightMarker(sceneKey);
+            
+            console.log(`[加载] ${scene.name}`);
+        }
+        
+        // ==================== 自动导览 ====================
+        function stopAutoTour() {
+            if (autoTimer) clearTimeout(autoTimer);
+            isAutoTouring = false;
+            btnAutoTour.innerText = '🚀 自动导览';
+            btnAutoTour.style.background = "rgba(0,0,0,0.7)";
+            console.log('[自动导览] 已停止');
+        }
+        
+        function startAutoTour() {
+            if (autoTimer) clearTimeout(autoTimer);
+            isAutoTouring = true;
+            btnAutoTour.innerText = '⏸️ 暂停导览';
+            btnAutoTour.style.background = "#8B4513";
+            console.log('[自动导览] 已启动');
+            
+            const tourPath = ['library', 'buddha'];
+            let currentIndex = tourPath.indexOf(currentSceneId);
+            if (currentIndex === -1) currentIndex = 0;
+            
+            function nextScene() {
+                if (!isAutoTouring) return;
+                let nextIndex = (currentIndex + 1) % tourPath.length;
+                loadScene(tourPath[nextIndex], false);
+                currentIndex = nextIndex;
+                autoTimer = setTimeout(nextScene, 10000);
+            }
+            
+            autoTimer = setTimeout(nextScene, 4000);
+        }
+        
+        function toggleAutoTour() {
+            if (isAutoTouring) stopAutoTour();
+            else startAutoTour();
+        }
+        
+        // ==================== 高德地图相关函数 ====================
+        function highlightMarker(sceneKey) {
+            const target = markers.find(m => m.key === sceneKey);
+            if (!target) return;
+            
+            const coord = sceneCoordinates[sceneKey];
+            if (coord && map) {
+                map.setCenter([coord.lng, coord.lat]);
+            }
+        }
+        
+        function initMap() {
+            if (typeof AMap === 'undefined') {
+                console.error('高德地图加载失败');
+                return;
+            }
+            
+            const center = sceneCoordinates.library;
+            map = new AMap.Map('mapContainer', {
+                zoom: 18,
+                center: [center.lng, center.lat],
+                viewMode: '2D',
+                showBuildingBlock: true,
+                showLabel: true,
+                resizeEnable: true
+            });
+            
+            // 添加标记
+            for (let [key, coord] of Object.entries(sceneCoordinates)) {
+                const marker = new AMap.Marker({
+                    position: [coord.lng, coord.lat],
+                    title: coord.name,
+                    label: {
+                        content: `<div style="background:#8B4513; color:white; padding:4px 8px; border-radius:20px; font-size:11px; white-space:nowrap;">${coord.name}</div>`,
+                        offset: new AMap.Pixel(0, -30)
+                    },
+                    extData: { sceneKey: key }
+                });
+                
+                marker.on('click', function() {
+                    const sceneKey = this.getExtData().sceneKey;
+                    if (sceneKey && scenes[sceneKey]) {
+                        if (isAutoTouring) stopAutoTour();
+                        loadScene(sceneKey);
+                    }
+                });
+                
+                marker.setMap(map);
+                markers.push({ marker, key });
+            }
+            
+            highlightMarker('library');
+            console.log('[地图] 初始化完成');
+        }
+        
+        // ==================== 事件绑定 ====================
+        btnLibrary.addEventListener('click', () => {
+            if (isAutoTouring) stopAutoTour();
+            loadScene('library');
+        });
+        
+        btnBuddha.addEventListener('click', () => {
+            if (isAutoTouring) stopAutoTour();
+            loadScene('buddha');
+        });
+        
+        btnAutoTour.addEventListener('click', toggleAutoTour);
+        
+        // ==================== 页面启动 ====================
+        window.addEventListener('load', () => {
+            loadScene('library', true);
+            
+            setTimeout(() => {
+                if (typeof AMap !== 'undefined') {
+                    initMap();
+                } else {
+                    console.error('高德地图 API 加载失败');
+                }
+            }, 500);
+            
+            setTimeout(() => {
+                const videoElem = document.querySelector('video');
+                if (videoElem) {
+                    videoElem.muted = true;
+                    videoElem.loop = true;
+                    console.log('全景视频已静音');
+                }
+            }, 1000);
+        });
+        
+        // iOS 陀螺仪权限
+        const requestOrientation = () => {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().catch(err => console.log('陀螺仪授权失败', err));
+            }
+        };
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', requestOrientation, { once: true });
+        });
+    </script>
+</body>
+</html>
